@@ -113,6 +113,17 @@ model Dokumen {
   kata_kunci      String[]      @default([])     // tags
   bahasa          String        @default("id") @db.VarChar(10)
   halaman         Int?
+  // Metadata JDIH Ekstra / Hasil OCR Parse
+  teu                  String?       @db.VarChar(255)
+  bentuk_singkat       String?       @db.VarChar(100)
+  tempat_penetapan     String?       @db.VarChar(255)
+  tanggal_penetapan    DateTime?
+  tanggal_pengundangan DateTime?
+  tanggal_berlaku      DateTime?
+  sumber               String?       @db.VarChar(255)
+  subjek               String?       @db.VarChar(255)
+  bidang               String?       @db.VarChar(255)
+  
   terindeks_di_es Boolean       @default(false)
   diunggah_oleh   String?       @db.VarChar(255)
   dibuat_pada     DateTime      @default(now())

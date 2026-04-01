@@ -10,6 +10,7 @@ import { FilterDokumenDto } from './dto/filter-dokumen.dto';
 import { OCR_QUEUE, INDEXING_QUEUE } from '../../queue/ocr.processor';
 import { ConfigService } from '@nestjs/config';
 import { StatusDokumen } from '@prisma/client';
+import { extractMetadata } from '../../utils/metadata-extractor';
 
 @Injectable()
 export class DokumenService {
@@ -71,6 +72,9 @@ export class DokumenService {
 
     // 3. Tentukan apakah perlu OCR
     const perluOcr = isiTeks.length < threshold;
+    
+    // 3.5. Ekstrak Metadata via Regex (Hanya jika teks tersedia)
+    const meta = perluOcr ? {} : extractMetadata(isiTeks, dto.jenis);
 
     // 4. Simpan ke database
     const dokumen = await this.prisma.dokumen.create({
@@ -82,6 +86,16 @@ export class DokumenService {
         instansi: dto.instansi,
         abstrak: dto.abstrak,
         kata_kunci: dto.kata_kunci || [],
+        
+        // Metadata hasil ekstraksi
+        teu: meta.teu,
+        bentuk_singkat: meta.bentuk_singkat,
+        tempat_penetapan: meta.tempat_penetapan,
+        tanggal_penetapan: meta.tanggal_penetapan,
+        tanggal_pengundangan: meta.tanggal_pengundangan,
+        tanggal_berlaku: meta.tanggal_berlaku,
+        subjek: meta.subjek || dto.judul, // Fallback ke judul jika subjek regex gagal
+        
         file_url: fileUrl,
         nama_file: file.originalname,
         ukuran_file: BigInt(file.size),
@@ -96,6 +110,27 @@ export class DokumenService {
           : undefined,
       },
     });
+    
+    // 4.5. Buat Relasi jika Regex menemukan keterkaitan (Mencabut/Mengubah)
+    if (!perluOcr && meta.relasi && meta.relasi.length > 0) {
+      for (const rel of meta.relasi) {
+        // Cari target dokumen berdasarkan Nomor dan Tahun
+        const targetDoc = await this.prisma.dokumen.findFirst({
+          where: { nomor: rel.nomorTarget, tahun: rel.tahunTarget, status: 'aktif', dihapus_pada: null }
+        });
+        
+        if (targetDoc) {
+          await this.prisma.relasiDokumen.create({
+            data: {
+              dokumen_id: dokumen.id,
+              dokumen_terkait_id: targetDoc.id,
+              tipe_relasi: rel.tipe,
+              keterangan: rel.keterangan
+            }
+          }).catch(() => {}); // Abaikan jika duplicate
+        }
+      }
+    }
 
     // 5. Kirim ke OCR queue jika perlu
     if (perluOcr) {

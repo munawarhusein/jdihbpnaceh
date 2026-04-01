@@ -11,6 +11,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { ConfigService } from '@nestjs/config';
+import { extractMetadata } from '../utils/metadata-extractor';
 
 export const OCR_QUEUE = 'ocr_queue';
 export const INDEXING_QUEUE = 'indexing_queue';
@@ -98,15 +99,51 @@ export class OcrProcessor extends WorkerHost {
 
       const isiTeksGabungan = hasilTeks.filter(Boolean).join('\n\n').trim();
 
-      // 3. Update database
+      // Dapatkan data dokumen saat ini untuk nama jenisnya
+      const dokumenLama = await this.prisma.dokumen.findUnique({
+        where: { id: dokumenId },
+        select: { jenis: true, judul: true }
+      });
+
+      // Ekstrak Metadata menggunakan Regex NLP
+      const meta = extractMetadata(isiTeksGabungan, dokumenLama?.jenis || '');
+
+      // 3. Update database dengan teks + metadata
       const dokumenUpdated = await this.prisma.dokumen.update({
         where: { id: dokumenId },
         data: {
           isi_teks: isiTeksGabungan,
           status_ocr: 'selesai',
           is_ocr: true,
+          
+          teu: meta.teu,
+          bentuk_singkat: meta.bentuk_singkat,
+          tempat_penetapan: meta.tempat_penetapan,
+          tanggal_penetapan: meta.tanggal_penetapan,
+          tanggal_pengundangan: meta.tanggal_pengundangan,
+          tanggal_berlaku: meta.tanggal_berlaku,
+          subjek: meta.subjek || dokumenLama?.judul,
         },
       });
+
+      // 3.5. Buat Relasi jika Regex menemukan keterkaitan (Mencabut/Mengubah)
+      if (meta.relasi && meta.relasi.length > 0) {
+        for (const rel of meta.relasi) {
+          const targetDoc = await this.prisma.dokumen.findFirst({
+            where: { nomor: rel.nomorTarget, tahun: rel.tahunTarget, status: 'aktif', dihapus_pada: null }
+          });
+          if (targetDoc) {
+            await this.prisma.relasiDokumen.create({
+              data: {
+                dokumen_id: dokumenId,
+                dokumen_terkait_id: targetDoc.id,
+                tipe_relasi: rel.tipe,
+                keterangan: rel.keterangan
+              }
+            }).catch(() => {});
+          }
+        }
+      }
 
       // 4. Re-index ke Elasticsearch
       await this.elasticsearch.indexDokumenDoc({

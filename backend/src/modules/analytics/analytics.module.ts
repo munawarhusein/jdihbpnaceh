@@ -1,9 +1,9 @@
 import { Module } from '@nestjs/common';
 import { AnalyticsController } from './analytics.controller';
-import { ElasticsearchIntegrationModule } from '../../integrations/elasticsearch/elasticsearch.module';
+import { AnalyticsService } from './analytics.service';
 
 @Module({
-  imports: [ElasticsearchIntegrationModule],
   controllers: [AnalyticsController],
+  providers: [AnalyticsService],
 })
 export class AnalyticsModule {}
