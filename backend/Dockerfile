@@ -17,7 +17,8 @@ RUN apk add --no-cache \
     imagemagick \
     python3 \
     make \
-    g++
+    g++ \
+    openssl
 
 # Copy package files
 COPY package*.json ./
@@ -48,7 +49,8 @@ RUN apk add --no-cache \
     poppler-utils \
     ghostscript \
     imagemagick \
-    dumb-init
+    dumb-init \
+    openssl
 
 # Copy built files dari builder
 COPY --from=builder /app/dist ./dist
