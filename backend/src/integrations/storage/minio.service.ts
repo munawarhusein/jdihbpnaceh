@@ -77,7 +77,9 @@ export class MinioService implements IStorageService, OnModuleInit {
     const useSSL = this.configService.get('storage.minio.useSSL');
     const protocol = useSSL ? 'https' : 'http';
 
-    return `${protocol}://${endpoint}:${port}/${this.bucket}/${objectName}`;
+    const publicUrl = process.env.MINIO_PUBLIC_URL || `${protocol}://${endpoint}:${port}`;
+
+    return `${publicUrl}/${this.bucket}/${objectName}`;
   }
 
   async delete(fileUrl: string): Promise<void> {

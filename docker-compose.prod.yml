@@ -21,8 +21,9 @@ services:
       ES_PORT: 9200
       STORAGE_PROVIDER: minio
       MINIO_ENDPOINT: minio
-      MINIO_PORT: 9000
-      MINIO_USE_SSL: "false"
+      MINIO_PORT: '9000'
+      MINIO_USE_SSL: 'false'
+      MINIO_PUBLIC_URL: ${FRONTEND_URL}
       MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY}
       MINIO_SECRET_KEY: ${MINIO_SECRET_KEY}
       MINIO_BUCKET: ${MINIO_BUCKET:-jdih-dokumen}
