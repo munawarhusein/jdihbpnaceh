@@ -1,0 +1,198 @@
+// ============================================================
+// JDIH BPN Aceh — Prisma Schema
+// Semua nama tabel dan kolom menggunakan Bahasa Indonesia
+// ============================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================
+// ENUM
+// ============================================================
+
+enum PeranPengguna {
+  admin
+  pengelola
+  publik
+}
+
+enum StatusDokumen {
+  draf
+  aktif
+  dicabut
+  diubah
+}
+
+enum StatusOcr {
+  menunggu
+  diproses
+  selesai
+  gagal
+}
+
+enum TipeRelasi {
+  mengubah
+  mencabut
+  terkait
+}
+
+enum TipeAksi {
+  unggah
+  ubah
+  hapus
+  lihat
+  unduh
+  login
+  logout
+}
+
+// ============================================================
+// TABEL: pengguna
+// ============================================================
+model Pengguna {
+  id              String        @id @default(cuid())
+  nama            String        @db.VarChar(255)
+  email           String        @unique @db.VarChar(255)
+  kata_sandi      String        @db.VarChar(255)
+  peran           PeranPengguna @default(publik)
+  aktif           Boolean       @default(true)
+  terakhir_masuk  DateTime?
+  dibuat_pada     DateTime      @default(now())
+  diperbarui_pada DateTime      @updatedAt
+  dihapus_pada    DateTime?     // Soft delete
+
+  log_aktivitas LogAktivitas[]
+
+  @@index([email])
+  @@index([peran])
+  @@map("pengguna")
+}
+
+// ============================================================
+// TABEL: kategori
+// ============================================================
+model Kategori {
+  id              String    @id @default(cuid())
+  nama            String    @unique @db.VarChar(255)
+  keterangan      String?   @db.Text
+  aktif           Boolean   @default(true)
+  dibuat_pada     DateTime  @default(now())
+  diperbarui_pada DateTime  @updatedAt
+
+  dokumen_kategori DokumenKategori[]
+
+  @@map("kategori")
+}
+
+// ============================================================
+// TABEL: dokumen (CORE)
+// ============================================================
+model Dokumen {
+  id              String        @id @default(cuid())
+  judul           String        @db.VarChar(500)
+  nomor           String?       @db.VarChar(100)
+  tahun           Int
+  jenis           String        @db.VarChar(100)  // UU, PP, Perpres, Permen, dsb.
+  instansi        String        @db.VarChar(255)
+  status          StatusDokumen @default(aktif)
+  file_url        String        @db.VarChar(1000)
+  nama_file       String        @db.VarChar(500)
+  ukuran_file     BigInt        @default(0)       // dalam bytes
+  isi_teks        String?       @db.Text
+  is_ocr          Boolean       @default(false)
+  status_ocr      StatusOcr     @default(menunggu)
+  percobaan_ocr   Int           @default(0)       // retry counter
+  singkatan       String?       @db.VarChar(100)
+  abstrak         String?       @db.Text
+  kata_kunci      String[]      @default([])     // tags
+  bahasa          String        @default("id") @db.VarChar(10)
+  halaman         Int?
+  terindeks_di_es Boolean       @default(false)
+  diunggah_oleh   String?       @db.VarChar(255)
+  dibuat_pada     DateTime      @default(now())
+  diperbarui_pada DateTime      @updatedAt
+  dihapus_pada    DateTime?     // Soft delete
+
+  // Relasi
+  dokumen_kategori DokumenKategori[]
+  relasi_sebagai_sumber    RelasiDokumen[] @relation("sumber")
+  relasi_sebagai_terkait   RelasiDokumen[] @relation("terkait")
+  log_aktivitas            LogAktivitas[]
+
+  @@index([tahun])
+  @@index([jenis])
+  @@index([instansi])
+  @@index([status])
+  @@index([status_ocr])
+  @@index([dibuat_pada])
+  @@index([dihapus_pada])
+  @@map("dokumen")
+}
+
+// ============================================================
+// TABEL: dokumen_kategori (pivot)
+// ============================================================
+model DokumenKategori {
+  id          String   @id @default(cuid())
+  dokumen_id  String
+  kategori_id String
+  dibuat_pada DateTime @default(now())
+
+  dokumen  Dokumen  @relation(fields: [dokumen_id], references: [id], onDelete: Cascade)
+  kategori Kategori @relation(fields: [kategori_id], references: [id], onDelete: Cascade)
+
+  @@unique([dokumen_id, kategori_id])
+  @@index([dokumen_id])
+  @@index([kategori_id])
+  @@map("dokumen_kategori")
+}
+
+// ============================================================
+// TABEL: relasi_dokumen
+// ============================================================
+model RelasiDokumen {
+  id                  String     @id @default(cuid())
+  dokumen_id          String
+  dokumen_terkait_id  String
+  tipe_relasi         TipeRelasi
+  keterangan          String?    @db.Text
+  dibuat_pada         DateTime   @default(now())
+
+  dokumen         Dokumen @relation("sumber", fields: [dokumen_id], references: [id], onDelete: Cascade)
+  dokumen_terkait Dokumen @relation("terkait", fields: [dokumen_terkait_id], references: [id], onDelete: Cascade)
+
+  @@unique([dokumen_id, dokumen_terkait_id, tipe_relasi])
+  @@index([dokumen_id])
+  @@index([dokumen_terkait_id])
+  @@map("relasi_dokumen")
+}
+
+// ============================================================
+// TABEL: log_aktivitas (Audit Log)
+// ============================================================
+model LogAktivitas {
+  id           String    @id @default(cuid())
+  pengguna_id  String?
+  dokumen_id   String?
+  tipe_aksi    TipeAksi
+  keterangan   String?   @db.Text
+  ip_address   String?   @db.VarChar(45)
+  user_agent   String?   @db.Text
+  metadata     Json?
+  dibuat_pada  DateTime  @default(now())
+
+  pengguna Pengguna? @relation(fields: [pengguna_id], references: [id], onDelete: SetNull)
+  dokumen  Dokumen?  @relation(fields: [dokumen_id], references: [id], onDelete: SetNull)
+
+  @@index([pengguna_id])
+  @@index([dokumen_id])
+  @@index([tipe_aksi])
+  @@index([dibuat_pada])
+  @@map("log_aktivitas")
+}
