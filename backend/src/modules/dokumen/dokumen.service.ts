@@ -196,13 +196,37 @@ export class DokumenService {
   }
 
   async hapusSoft(id: string): Promise<void> {
-    await this.dapatkanSatu(id);
+    const dokumen = await this.dapatkanSatu(id);
+
+    // 1. Hapus file fisik dari MinIO
+    if (dokumen.file_url) {
+      try {
+        await this.storage.delete(dokumen.file_url);
+        this.logger.log(`File MinIO dihapus: ${dokumen.file_url}`);
+      } catch (e: any) {
+        this.logger.warn(`Gagal hapus file MinIO untuk dokumen ${id}: ${e.message}`);
+      }
+    }
+
+    // 2. Soft delete di database
     await this.prisma.dokumen.update({
       where: { id },
       data: { dihapus_pada: new Date(), status: StatusDokumen.dicabut },
     });
+
+    // 3. Hapus index Elasticsearch
     await this.elasticsearch.deleteDokumen(id);
-    this.logger.log(`Dokumen ${id} dihapus (soft delete)`);
+
+    // 4. Catat audit log
+    await this.prisma.logAktivitas.create({
+      data: {
+        dokumen_id: id,
+        tipe_aksi: 'hapus',
+        keterangan: `Dokumen dihapus: ${dokumen.judul}`,
+      },
+    });
+
+    this.logger.log(`Dokumen ${id} dihapus lengkap (file + DB + ES)`);
   }
 
   async reindex(id: string): Promise<void> {
