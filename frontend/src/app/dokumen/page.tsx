@@ -145,6 +145,12 @@ function DokumenContent() {
                             <span className="text-xs text-gray-400 font-medium">
                               Tahun {doc.tahun || '2024'}
                             </span>
+                            {doc.status === 'aktif' && (
+                              <span className="bg-emerald-50 text-emerald-700 text-[10px] font-bold px-1.5 py-0.5 rounded border border-emerald-200">Berlaku</span>
+                            )}
+                            {doc.status === 'dicabut' && (
+                              <span className="bg-red-50 text-red-600 text-[10px] font-bold px-1.5 py-0.5 rounded border border-red-200">Tidak Berlaku</span>
+                            )}
                           </div>
                           <h3 className="font-bold text-lg text-gray-900 group-hover:text-bpn transition leading-snug">
                             {doc.judul}

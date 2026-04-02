@@ -1,5 +1,6 @@
-import { IsString, IsOptional, IsInt, IsArray } from 'class-validator';
-import { Type } from 'class-transformer';
+import { IsString, IsOptional, IsInt, IsArray, IsEnum, IsBoolean } from 'class-validator';
+import { Type, Transform } from 'class-transformer';
+import { StatusDokumen } from '@prisma/client';
 
 export class EditDokumenDto {
   @IsOptional()
@@ -31,4 +32,16 @@ export class EditDokumenDto {
   @IsArray()
   @IsString({ each: true })
   kata_kunci?: string[];
+
+  @IsOptional()
+  @IsEnum(StatusDokumen)
+  status?: StatusDokumen;
+
+  @IsOptional()
+  @Transform(({ value }) => value === 'true' || value === true)
+  sifat_sensitif?: boolean;
+
+  @IsOptional()
+  @IsString()
+  nip_pemilik?: string;
 }

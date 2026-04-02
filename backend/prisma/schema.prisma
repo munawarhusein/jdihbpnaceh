@@ -142,6 +142,10 @@ model Dokumen {
   subjek               String?       @db.VarChar(255)
   bidang               String?       @db.VarChar(255)
   
+  // Keamanan
+  sifat_sensitif       Boolean       @default(false)
+  nip_pemilik          String?       @db.VarChar(30)
+  
   terindeks_di_es Boolean       @default(false)
   diunggah_oleh   String?       @db.VarChar(255)
   dibuat_pada     DateTime      @default(now())

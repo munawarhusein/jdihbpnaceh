@@ -46,4 +46,17 @@ export class BuatDokumenDto {
   @IsArray()
   @IsOptional()
   kategori_ids?: string[];
+
+  @IsString()
+  @IsOptional()
+  @IsEnum(StatusDokumen)
+  status?: StatusDokumen;
+
+  @IsOptional()
+  @Transform(({ value }) => value === 'true' || value === true)
+  sifat_sensitif?: boolean;
+
+  @IsString()
+  @IsOptional()
+  nip_pemilik?: string;
 }

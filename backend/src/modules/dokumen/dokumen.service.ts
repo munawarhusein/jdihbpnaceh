@@ -1,4 +1,4 @@
-import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import * as pdfParse from 'pdf-parse';
@@ -130,6 +130,9 @@ export class DokumenService {
         isi_teks: perluOcr ? null : isiTeks,
         is_ocr: false,
         status_ocr: perluOcr ? 'menunggu' : 'selesai',
+        status: dto.status || 'aktif',
+        sifat_sensitif: dto.sifat_sensitif || false,
+        nip_pemilik: dto.sifat_sensitif ? dto.nip_pemilik : null,
         diunggah_oleh: uploadedBy,
         dokumen_kategori: dto.kategori_ids?.length
           ? {
@@ -209,7 +212,7 @@ export class DokumenService {
     }
 
     // Tanpa query: gunakan database langsung
-    const where: any = { dihapus_pada: null, status: 'aktif' };
+    const where: any = { dihapus_pada: null, status: 'aktif', sifat_sensitif: false };
     if (filter.jenis) where.jenis = filter.jenis;
     if (filter.instansi) where.instansi = { contains: filter.instansi, mode: 'insensitive' };
     if (filter.tahun) where.tahun = filter.tahun;
@@ -238,7 +241,7 @@ export class DokumenService {
     };
   }
 
-  async dapatkanSatu(id: string) {
+  async dapatkanSatu(id: string, userNip?: string, userPeran?: string) {
     const dokumen = await this.prisma.dokumen.findFirst({
       where: { id, dihapus_pada: null },
       include: {
@@ -256,6 +259,72 @@ export class DokumenService {
     });
 
     return dokumen;
+  }
+
+  /**
+   * Akses file secara aman — Streaming file dari MinIO
+   * File sensitif hanya bisa diakses oleh pemilik NIP atau Admin/Superadmin
+   */
+  async getBerkas(id: string, user?: { nip?: string; peran?: string }) {
+    const dokumen = await this.prisma.dokumen.findFirst({
+      where: { id, dihapus_pada: null },
+    });
+    if (!dokumen) throw new NotFoundException('Dokumen tidak ditemukan');
+
+    if (dokumen.sifat_sensitif) {
+      if (!user) {
+        throw new ForbiddenException('Dokumen ini bersifat rahasia. Silakan login terlebih dahulu.');
+      }
+
+      const isAdmin = user.peran === 'superadmin' || user.peran === 'admin';
+      const isOwner = user.nip && dokumen.nip_pemilik && user.nip === dokumen.nip_pemilik;
+
+      if (!isAdmin && !isOwner) {
+        throw new ForbiddenException('Anda tidak memiliki akses ke dokumen rahasia ini.');
+      }
+    }
+
+    // Catat log unduh
+    await this.prisma.logAktivitas.create({
+      data: { dokumen_id: id, tipe_aksi: 'unduh', keterangan: `Mengakses berkas: ${dokumen.judul}` },
+    });
+
+    const stream = await this.storage.getStream(dokumen.file_url);
+    return { stream, namaFile: dokumen.nama_file, mimeType: 'application/pdf' };
+  }
+
+  /**
+   * Daftar dokumen untuk dashboard admin (termasuk sensitif)
+   */
+  async daftarSemua(filter: FilterDokumenDto) {
+    const where: any = { dihapus_pada: null };
+    if (filter.jenis) where.jenis = filter.jenis;
+    if (filter.instansi) where.instansi = { contains: filter.instansi, mode: 'insensitive' };
+    if (filter.tahun) where.tahun = filter.tahun;
+
+    const [total, items] = await Promise.all([
+      this.prisma.dokumen.count({ where }),
+      this.prisma.dokumen.findMany({
+        where,
+        select: {
+          id: true, judul: true, nomor: true, tahun: true,
+          jenis: true, instansi: true, status: true, dibuat_pada: true,
+          status_ocr: true, ukuran_file: true, file_url: true, nama_file: true,
+          sifat_sensitif: true, nip_pemilik: true,
+        },
+        orderBy: { dibuat_pada: filter.urutkan === 'terlama' ? 'asc' : 'desc' },
+        skip: ((filter.halaman || 1) - 1) * (filter.limit || 10),
+        take: filter.limit || 10,
+      }),
+    ]);
+
+    return {
+      total,
+      halaman: filter.halaman || 1,
+      limit_per_halaman: filter.limit || 10,
+      total_halaman: Math.ceil(total / (filter.limit || 10)),
+      hasil: items,
+    };
   }
 
   async hapusSoft(id: string, user: any): Promise<any> {
@@ -324,6 +393,11 @@ export class DokumenService {
     if (dto.instansi !== undefined) updatedData.instansi = dto.instansi;
     if (dto.abstrak !== undefined) updatedData.abstrak = dto.abstrak;
     if (dto.kata_kunci !== undefined) updatedData.kata_kunci = dto.kata_kunci;
+    if (dto.status !== undefined) updatedData.status = dto.status;
+    if (dto.sifat_sensitif !== undefined) updatedData.sifat_sensitif = dto.sifat_sensitif;
+    if (dto.nip_pemilik !== undefined) updatedData.nip_pemilik = dto.nip_pemilik;
+    // Jika tidak sensitif lagi, hapus NIP pemilik
+    if (dto.sifat_sensitif === false) updatedData.nip_pemilik = null;
 
     const dokumen = await this.prisma.dokumen.update({
       where: { id },

@@ -1,6 +1,6 @@
 'use client';
 import { useState, useRef, useEffect } from 'react';
-import { UploadCloud, FileText, Trash2, Search, X, CheckCircle, Clock, AlertCircle, Pencil, Save, Eye } from 'lucide-react';
+import { UploadCloud, FileText, Trash2, Search, X, CheckCircle, Clock, AlertCircle, Pencil, Save, Eye, Lock, ShieldAlert } from 'lucide-react';
 import Link from 'next/link';
 import api from '@/lib/api';
 
@@ -18,7 +18,7 @@ export default function KelolaDokumenPage() {
   // Edit Modal State
   const [editOpen, setEditOpen] = useState(false);
   const [editDoc, setEditDoc] = useState<any>(null);
-  const [editForm, setEditForm] = useState({ judul: '', nomor: '', tahun: 0, jenis: '', instansi: '', abstrak: '', kata_kunci: '' });
+  const [editForm, setEditForm] = useState({ judul: '', nomor: '', tahun: 0, jenis: '', instansi: '', abstrak: '', kata_kunci: '', status: 'aktif', sifat_sensitif: false, nip_pemilik: '' });
   const [editLoading, setEditLoading] = useState(false);
   const [editErr, setEditErr] = useState('');
   
@@ -28,13 +28,19 @@ export default function KelolaDokumenPage() {
 
   // Upload Form State
   const [file, setFile] = useState<File | null>(null);
-  const [form, setForm] = useState({ judul: '', tahun: new Date().getFullYear(), jenis: '', instansi: 'BPN Provinsi Aceh', kategori_ids: [] });
+  const [form, setForm] = useState({ judul: '', tahun: new Date().getFullYear(), jenis: '', instansi: 'BPN Provinsi Aceh', kategori_ids: [], sifat_sensitif: false, nip_pemilik: '', status: 'aktif' });
 
   const fetchDokumen = async () => {
     try {
-      const res = await api.get('/dokumen');
-      setData(res.data.data?.hasil || []);
-    } catch(e) { console.error(e) } finally { setLoading(false) }
+      const res = await api.get('/dokumen/admin');
+      setData(res.data.data?.hasil || res.data?.hasil || []);
+    } catch(e) { 
+      // Fallback ke endpoint publik jika admin endpoint gagal
+      try {
+        const res = await api.get('/dokumen');
+        setData(res.data.data?.hasil || []);
+      } catch(e2) { console.error(e2) }
+    } finally { setLoading(false) }
   }
 
   useEffect(() => {
@@ -58,6 +64,7 @@ export default function KelolaDokumenPage() {
   const submitUpload = async () => {
     if (!file) return setErr("Pilih atau tarik file PDF terlebih dahulu!");
     if (!form.judul || !form.jenis || !form.instansi) return setErr("Judul, Jenis, dan Instansi wajib diisi!");
+    if (form.sifat_sensitif && !form.nip_pemilik) return setErr("NIP Pemilik Akses wajib diisi untuk dokumen sensitif!");
     
     setUploading(true);
     setErr('');
@@ -68,6 +75,11 @@ export default function KelolaDokumenPage() {
       fd.append('tahun', form.tahun.toString());
       fd.append('jenis', form.jenis);
       fd.append('instansi', form.instansi);
+      fd.append('status', form.status);
+      fd.append('sifat_sensitif', form.sifat_sensitif.toString());
+      if (form.sifat_sensitif && form.nip_pemilik) {
+        fd.append('nip_pemilik', form.nip_pemilik);
+      }
       
       await api.post('/dokumen/unggah', fd, {
         headers: { 'Content-Type': 'multipart/form-data' }
@@ -83,7 +95,7 @@ export default function KelolaDokumenPage() {
   }
 
   const openForm = () => {
-    setErr(''); setFile(null); setForm({ judul: '', tahun: new Date().getFullYear(), jenis: '', instansi: 'BPN Provinsi Aceh', kategori_ids: [] }); setIsOpen(true);
+    setErr(''); setFile(null); setForm({ judul: '', tahun: new Date().getFullYear(), jenis: '', instansi: 'BPN Provinsi Aceh', kategori_ids: [], sifat_sensitif: false, nip_pemilik: '', status: 'aktif' }); setIsOpen(true);
   }
 
   const hapusDokumen = async (id: string, judul: string) => {
@@ -110,6 +122,9 @@ export default function KelolaDokumenPage() {
       instansi: doc.instansi || '',
       abstrak: doc.abstrak || '',
       kata_kunci: (doc.kata_kunci || []).join(', '),
+      status: doc.status || 'aktif',
+      sifat_sensitif: doc.sifat_sensitif || false,
+      nip_pemilik: doc.nip_pemilik || '',
     });
     setEditErr('');
     setEditOpen(true);
@@ -118,6 +133,7 @@ export default function KelolaDokumenPage() {
   const submitEdit = async () => {
     if (!editDoc) return;
     if (!editForm.judul) return setEditErr('Judul wajib diisi!');
+    if (editForm.sifat_sensitif && !editForm.nip_pemilik) return setEditErr('NIP Pemilik Akses wajib diisi untuk dokumen sensitif!');
 
     setEditLoading(true);
     setEditErr('');
@@ -129,6 +145,9 @@ export default function KelolaDokumenPage() {
         jenis: editForm.jenis,
         instansi: editForm.instansi,
         abstrak: editForm.abstrak || undefined,
+        status: editForm.status,
+        sifat_sensitif: editForm.sifat_sensitif,
+        nip_pemilik: editForm.sifat_sensitif ? editForm.nip_pemilik : null,
       };
       // Parse kata kunci dari string koma-separated ke array
       if (editForm.kata_kunci.trim()) {
@@ -150,6 +169,16 @@ export default function KelolaDokumenPage() {
     const q = searchQuery.toLowerCase();
     return (d.judul?.toLowerCase().includes(q)) || (d.jenis?.toLowerCase().includes(q)) || (d.instansi?.toLowerCase().includes(q));
   });
+
+  const statusLabel = (s: string) => {
+    switch(s) {
+      case 'aktif': return { text: 'Berlaku', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' };
+      case 'dicabut': return { text: 'Tidak Berlaku', cls: 'bg-red-50 text-red-600 border-red-200' };
+      case 'draf': return { text: 'Draf', cls: 'bg-amber-50 text-amber-600 border-amber-200' };
+      case 'diubah': return { text: 'Diubah', cls: 'bg-blue-50 text-blue-600 border-blue-200' };
+      default: return { text: s, cls: 'bg-slate-100 text-slate-600 border-slate-200' };
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -185,28 +214,44 @@ export default function KelolaDokumenPage() {
               <tr>
                 <th className="py-4 px-6 text-slate-500 font-semibold text-sm">Informasi Dokumen</th>
                 <th className="py-4 px-6 text-slate-500 font-semibold text-sm">Klasifikasi</th>
-                <th className="py-4 px-6 text-slate-500 font-semibold text-sm">Status OCR Engine</th>
+                <th className="py-4 px-6 text-slate-500 font-semibold text-sm">Status</th>
                 <th className="py-4 px-6 text-slate-500 font-semibold text-sm text-right">Opsi</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {loading ? <tr><td colSpan={4} className="py-8 text-center text-slate-400">Loading...</td></tr> : 
-                filteredData.map((d: any) => (
+                filteredData.map((d: any) => {
+                const st = statusLabel(d.status);
+                return (
                 <tr key={d.id} className="hover:bg-slate-50 group">
                   <td className="py-4 px-6">
-                    <p className="font-bold text-slate-800 text-sm">{d.judul}</p>
-                    <p className="text-xs text-slate-400 flex items-center gap-1.5 mt-1">
-                      <FileText className="w-3 h-3"/> PDF • {((Number(d.ukuran_file) || 0) / 1024 / 1024).toFixed(2)} MB • {d.instansi}
-                    </p>
-                    {d.kata_kunci && d.kata_kunci.length > 0 && (
-                      <div className="flex flex-wrap gap-1 mt-2">
-                        {d.kata_kunci.slice(0, 3).map((tag: string, idx: number) => (
-                          <span key={idx} className="bg-bpn/10 text-bpn text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded">
-                            {tag}
-                          </span>
-                        ))}
+                    <div className="flex items-start gap-2">
+                      {d.sifat_sensitif && (
+                        <span className="mt-0.5 shrink-0" title="Dokumen Rahasia">
+                          <Lock className="w-4 h-4 text-red-500" />
+                        </span>
+                      )}
+                      <div>
+                        <p className="font-bold text-slate-800 text-sm">{d.judul}</p>
+                        <p className="text-xs text-slate-400 flex items-center gap-1.5 mt-1">
+                          <FileText className="w-3 h-3"/> PDF • {((Number(d.ukuran_file) || 0) / 1024 / 1024).toFixed(2)} MB • {d.instansi}
+                        </p>
+                        {d.sifat_sensitif && d.nip_pemilik && (
+                          <p className="text-[10px] text-red-500 font-semibold mt-1 flex items-center gap-1">
+                            <ShieldAlert className="w-3 h-3" /> Akses terbatas: NIP {d.nip_pemilik}
+                          </p>
+                        )}
+                        {d.kata_kunci && d.kata_kunci.length > 0 && (
+                          <div className="flex flex-wrap gap-1 mt-2">
+                            {d.kata_kunci.slice(0, 3).map((tag: string, idx: number) => (
+                              <span key={idx} className="bg-bpn/10 text-bpn text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded">
+                                {tag}
+                              </span>
+                            ))}
+                          </div>
+                        )}
                       </div>
-                    )}
+                    </div>
                   </td>
                   <td className="py-4 px-6">
                      <div className="flex flex-col gap-1 items-start">
@@ -215,19 +260,24 @@ export default function KelolaDokumenPage() {
                      </div>
                   </td>
                   <td className="py-4 px-6">
-                    {d.status_ocr === 'selesai' ? (
-                      <span className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-600 bg-emerald-50 px-2 py-1.5 rounded-md border border-emerald-100">
-                        <CheckCircle className="w-3.5 h-3.5"/> Pengindeksan Berhasil
+                    <div className="flex flex-col gap-1.5">
+                      <span className={`inline-flex items-center text-xs font-bold px-2 py-1 rounded-md border ${st.cls}`}>
+                        {st.text}
                       </span>
-                    ) : d.status_ocr === 'menunggu' || d.status_ocr === 'diproses' ? (
-                      <span className="inline-flex items-center gap-1.5 text-xs font-bold text-amber-600 bg-amber-50 px-2 py-1.5 rounded-md border border-amber-100">
-                        <Clock className="w-3.5 h-3.5 animate-spin-slow"/> Mesin Sedang Membaca
-                      </span>
-                    ) : (
-                       <span className="inline-flex items-center gap-1.5 text-xs font-bold text-red-600 bg-red-50 px-2 py-1.5 rounded-md border border-red-100">
-                        <AlertCircle className="w-3.5 h-3.5"/> Kesalahan Ekstraksi
-                      </span>
-                    )}
+                      {d.status_ocr === 'selesai' ? (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-600">
+                          <CheckCircle className="w-3 h-3"/> Terindeks
+                        </span>
+                      ) : d.status_ocr === 'menunggu' || d.status_ocr === 'diproses' ? (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-amber-600">
+                          <Clock className="w-3 h-3 animate-spin-slow"/> Memproses
+                        </span>
+                      ) : (
+                         <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-red-600">
+                          <AlertCircle className="w-3 h-3"/> Gagal
+                        </span>
+                      )}
+                    </div>
                   </td>
                   <td className="py-4 px-6 text-right">
                     <div className="flex items-center justify-end gap-2">
@@ -243,7 +293,8 @@ export default function KelolaDokumenPage() {
                     </div>
                   </td>
                 </tr>
-              ))}
+              )})
+              }
               {filteredData.length === 0 && !loading && <tr><td colSpan={4} className="py-10 text-center text-slate-400">Berkas hukum masih kosong.</td></tr>}
             </tbody>
           </table>
@@ -313,9 +364,46 @@ export default function KelolaDokumenPage() {
                       <option value="Lainnya">Lainnya...</option>
                    </select>
                  </div>
-                 <div className="sm:col-span-2">
+                 <div>
                    <label className="text-sm font-semibold mb-1.5 block">Instansi Penerbit</label>
                    <input type="text" value={form.instansi} onChange={e=>setForm({...form, instansi: e.target.value})} className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-bpn/20 outline-none" />
+                 </div>
+                 <div>
+                   <label className="text-sm font-semibold mb-1.5 block">Status Dokumen</label>
+                   <select value={form.status} onChange={e=>setForm({...form, status: e.target.value})} className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-bpn/20 outline-none cursor-pointer">
+                      <option value="aktif">✅ Berlaku (Aktif)</option>
+                      <option value="dicabut">❌ Tidak Berlaku (Dicabut)</option>
+                      <option value="draf">📝 Draf</option>
+                   </select>
+                 </div>
+
+                 {/* ===== SENSITIF SECTION ===== */}
+                 <div className="sm:col-span-2 mt-2 p-4 bg-red-50/50 rounded-xl border border-red-100">
+                   <label className="flex items-center gap-3 cursor-pointer select-none">
+                     <input 
+                       type="checkbox" 
+                       checked={form.sifat_sensitif} 
+                       onChange={e => setForm({...form, sifat_sensitif: e.target.checked, nip_pemilik: e.target.checked ? form.nip_pemilik : ''})} 
+                       className="w-5 h-5 rounded border-red-300 text-red-600 focus:ring-red-500"
+                     />
+                     <div>
+                       <span className="font-bold text-sm text-red-700 flex items-center gap-1.5"><Lock className="w-4 h-4" /> Tandai sebagai Dokumen Rahasia/Sensitif</span>
+                       <p className="text-[11px] text-red-500 mt-0.5">Dokumen ini tidak akan ditampilkan di halaman publik. Hanya bisa diakses oleh pemilik NIP atau Admin.</p>
+                     </div>
+                   </label>
+                   {form.sifat_sensitif && (
+                     <div className="mt-3">
+                       <label className="text-sm font-semibold mb-1.5 block text-red-700">NIP Pemilik Akses <span className="text-red-400">*</span></label>
+                       <input 
+                         type="text" 
+                         value={form.nip_pemilik} 
+                         onChange={e => setForm({...form, nip_pemilik: e.target.value})} 
+                         placeholder="Contoh: 199001012020011001"
+                         className="w-full border border-red-200 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-red-200 outline-none bg-white" 
+                       />
+                       <p className="text-[11px] text-red-400 mt-1">Hanya pegawai dengan NIP ini yang dapat melihat dan mengunduh dokumen.</p>
+                     </div>
+                   )}
                  </div>
               </div>
             </div>
@@ -413,6 +501,22 @@ export default function KelolaDokumenPage() {
                     className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-bpn/20 outline-none"
                   />
                 </div>
+
+                {/* Status Berlaku / Tidak Berlaku */}
+                <div className="sm:col-span-2">
+                  <label className="text-sm font-semibold mb-1.5 block text-slate-700">Status Pemberlakuan</label>
+                  <select
+                    value={editForm.status}
+                    onChange={(e) => setEditForm({ ...editForm, status: e.target.value })}
+                    className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-bpn/20 outline-none cursor-pointer"
+                  >
+                    <option value="aktif">✅ Berlaku (Aktif)</option>
+                    <option value="dicabut">❌ Tidak Berlaku (Dicabut)</option>
+                    <option value="draf">📝 Draf</option>
+                    <option value="diubah">🔄 Diubah</option>
+                  </select>
+                </div>
+
                 <div className="sm:col-span-2">
                   <label className="text-sm font-semibold mb-1.5 block text-slate-700">Abstrak / Ringkasan</label>
                   <textarea
@@ -434,6 +538,34 @@ export default function KelolaDokumenPage() {
                     className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-bpn/20 outline-none"
                   />
                   <p className="text-[11px] text-slate-400 mt-1">Pisahkan setiap kata kunci dengan tanda koma.</p>
+                </div>
+
+                {/* ===== SENSITIF SECTION DI EDIT ===== */}
+                <div className="sm:col-span-2 p-4 bg-red-50/50 rounded-xl border border-red-100">
+                  <label className="flex items-center gap-3 cursor-pointer select-none">
+                    <input 
+                      type="checkbox" 
+                      checked={editForm.sifat_sensitif} 
+                      onChange={e => setEditForm({...editForm, sifat_sensitif: e.target.checked, nip_pemilik: e.target.checked ? editForm.nip_pemilik : ''})} 
+                      className="w-5 h-5 rounded border-red-300 text-red-600 focus:ring-red-500"
+                    />
+                    <div>
+                      <span className="font-bold text-sm text-red-700 flex items-center gap-1.5"><Lock className="w-4 h-4" /> Dokumen Rahasia/Sensitif</span>
+                      <p className="text-[11px] text-red-500 mt-0.5">Hanya tampil di dashboard admin. Tidak bisa dilihat publik.</p>
+                    </div>
+                  </label>
+                  {editForm.sifat_sensitif && (
+                    <div className="mt-3">
+                      <label className="text-sm font-semibold mb-1.5 block text-red-700">NIP Pemilik Akses <span className="text-red-400">*</span></label>
+                      <input 
+                        type="text" 
+                        value={editForm.nip_pemilik} 
+                        onChange={e => setEditForm({...editForm, nip_pemilik: e.target.value})} 
+                        placeholder="Contoh: 199001012020011001"
+                        className="w-full border border-red-200 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-red-200 outline-none bg-white" 
+                      />
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
