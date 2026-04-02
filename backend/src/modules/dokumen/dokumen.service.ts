@@ -11,6 +11,7 @@ import { OCR_QUEUE, INDEXING_QUEUE } from '../../queue/ocr.processor';
 import { ConfigService } from '@nestjs/config';
 import { StatusDokumen } from '@prisma/client';
 import { extractMetadata } from '../../utils/metadata-extractor';
+import { DeepseekService } from '../../integrations/ai/deepseek.service';
 
 @Injectable()
 export class DokumenService {
@@ -23,6 +24,7 @@ export class DokumenService {
     private readonly configService: ConfigService,
     @InjectQueue(OCR_QUEUE) private readonly ocrQueue: Queue,
     @InjectQueue(INDEXING_QUEUE) private readonly indexingQueue: Queue,
+    private readonly deepseekService: DeepseekService,
   ) {}
 
   /**
@@ -76,6 +78,32 @@ export class DokumenService {
     // 3.5. Ekstrak Metadata via Regex (Hanya jika teks tersedia)
     const meta = perluOcr ? {} : extractMetadata(isiTeks, dto.jenis);
 
+    // 3.8. Auto-Abstrak menggunakan AI jika abstrak kosong dan teks tersedia
+    let abstrakAkhir = dto.abstrak;
+    if (!abstrakAkhir && !perluOcr && isiTeks.length > 500) {
+      try {
+        const generatedAbstrak = await this.deepseekService.generateAbstrak(isiTeks);
+        if (generatedAbstrak) {
+          abstrakAkhir = generatedAbstrak;
+        }
+      } catch (e) {
+        this.logger.warn('Gagal generate auto abstrak, tetap gunakan kosong.');
+      }
+    }
+
+    // 3.9. Auto-Tags menggunakan AI jika kata kunci kosong
+    let kataKunciAkhir = dto.kata_kunci || [];
+    if (kataKunciAkhir.length === 0 && !perluOcr && isiTeks.length > 500) {
+      try {
+        const generatedTags = await this.deepseekService.generateTags(isiTeks);
+        if (generatedTags && generatedTags.length > 0) {
+          kataKunciAkhir = generatedTags;
+        }
+      } catch (e) {
+        this.logger.warn('Gagal generate auto tags, tetap gunakan kosong.');
+      }
+    }
+
     // 4. Simpan ke database
     const dokumen = await this.prisma.dokumen.create({
       data: {
@@ -84,8 +112,8 @@ export class DokumenService {
         tahun: dto.tahun,
         jenis: dto.jenis,
         instansi: dto.instansi,
-        abstrak: dto.abstrak,
-        kata_kunci: dto.kata_kunci || [],
+        abstrak: abstrakAkhir,
+        kata_kunci: kataKunciAkhir,
         
         // Metadata hasil ekstraksi
         teu: meta.teu,
@@ -230,9 +258,28 @@ export class DokumenService {
     return dokumen;
   }
 
-  async hapusSoft(id: string): Promise<void> {
+  async hapusSoft(id: string, user: any): Promise<any> {
     const dokumen = await this.dapatkanSatu(id);
 
+    // Jika admin biasa, buat permintaan persetujuan
+    if (user.peran !== 'superadmin') {
+      const permintaan = await this.prisma.permintaanAksi.create({
+        data: {
+          tipe_aksi: 'hapus',
+          dokumen_id: id,
+          pemohon_id: user.sub,
+          status: 'menunggu',
+          alasan: `Permintaan penghapusan dokumen: ${dokumen.judul}`,
+        },
+      });
+      return {
+        pesan: 'Permintaan penghapusan telah dikirim ke Super Admin.',
+        status: 'menunggu_persetujuan',
+        permintaan_id: permintaan.id
+      };
+    }
+
+    // Jika superadmin, lakukan hapus langsung
     // 1. Hapus file fisik dari MinIO
     if (dokumen.file_url) {
       try {
@@ -257,11 +304,52 @@ export class DokumenService {
       data: {
         dokumen_id: id,
         tipe_aksi: 'hapus',
-        keterangan: `Dokumen dihapus: ${dokumen.judul}`,
+        keterangan: `Dokumen dihapus langsung: ${dokumen.judul}`,
+        pengguna_id: user.sub,
       },
     });
 
     this.logger.log(`Dokumen ${id} dihapus lengkap (file + DB + ES)`);
+    return { pesan: 'Dokumen berhasil dihapus.' };
+  }
+
+  async editDokumen(id: string, dto: any, userId: string) {
+    const existing = await this.dapatkanSatu(id);
+
+    const updatedData: any = {};
+    if (dto.judul !== undefined) updatedData.judul = dto.judul;
+    if (dto.nomor !== undefined) updatedData.nomor = dto.nomor;
+    if (dto.tahun !== undefined) updatedData.tahun = dto.tahun;
+    if (dto.jenis !== undefined) updatedData.jenis = dto.jenis;
+    if (dto.instansi !== undefined) updatedData.instansi = dto.instansi;
+    if (dto.abstrak !== undefined) updatedData.abstrak = dto.abstrak;
+    if (dto.kata_kunci !== undefined) updatedData.kata_kunci = dto.kata_kunci;
+
+    const dokumen = await this.prisma.dokumen.update({
+      where: { id },
+      data: updatedData,
+    });
+
+    // Catat audit log
+    await this.prisma.logAktivitas.create({
+      data: {
+        dokumen_id: id,
+        pengguna_id: userId,
+        tipe_aksi: 'ubah',
+        keterangan: `Dokumen diperbarui: ${dokumen.judul}`,
+        metadata: { field_diubah: Object.keys(updatedData) },
+      },
+    });
+
+    // Re-index ke Elasticsearch agar data pencarian tetap sinkron
+    await this.indexingQueue.add(
+      'reindex-dokumen',
+      { dokumenId: id },
+      { jobId: `edit-reindex-${id}-${Date.now()}` },
+    );
+
+    this.logger.log(`Dokumen ${id} diperbarui dan dijadwalkan reindex`);
+    return dokumen;
   }
 
   async reindex(id: string): Promise<void> {

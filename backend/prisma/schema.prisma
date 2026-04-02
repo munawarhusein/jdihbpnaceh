@@ -17,6 +17,7 @@ datasource db {
 // ============================================================
 
 enum PeranPengguna {
+  superadmin
   admin
   pengelola
   publik
@@ -50,6 +51,14 @@ enum TipeAksi {
   unduh
   login
   logout
+  setujui
+  tolak
+}
+
+enum StatusPermintaan {
+  menunggu
+  disetujui
+  ditolak
 }
 
 // ============================================================
@@ -63,11 +72,20 @@ model Pengguna {
   peran           PeranPengguna @default(publik)
   aktif           Boolean       @default(true)
   terakhir_masuk  DateTime?
+  // Profil Lengkap
+  jabatan         String?       @db.VarChar(255)
+  nip             String?       @db.VarChar(30)
+  unit_kerja      String?       @db.VarChar(255)
+  no_telepon      String?       @db.VarChar(20)
+  foto_url        String?       @db.VarChar(1000)
+  
   dibuat_pada     DateTime      @default(now())
   diperbarui_pada DateTime      @updatedAt
   dihapus_pada    DateTime?     // Soft delete
 
-  log_aktivitas LogAktivitas[]
+  log_aktivitas       LogAktivitas[]
+  permintaan_dibuat   PermintaanAksi[] @relation("pemohon")
+  permintaan_disetujui PermintaanAksi[] @relation("penyetuju")
 
   @@index([email])
   @@index([peran])
@@ -206,4 +224,28 @@ model LogAktivitas {
   @@index([tipe_aksi])
   @@index([dibuat_pada])
   @@map("log_aktivitas")
+}
+
+// ============================================================
+// TABEL: permintaan_aksi (Approval Workflow)
+// ============================================================
+model PermintaanAksi {
+  id              String            @id @default(cuid())
+  tipe_aksi       TipeAksi
+  dokumen_id      String?
+  pemohon_id      String
+  penyetuju_id    String?
+  status          StatusPermintaan  @default(menunggu)
+  alasan          String?           @db.Text
+  metadata        Json?
+  dibuat_pada     DateTime          @default(now())
+  diperbarui_pada DateTime          @updatedAt
+
+  pemohon    Pengguna  @relation("pemohon", fields: [pemohon_id], references: [id], onDelete: Cascade)
+  penyetuju  Pengguna? @relation("penyetuju", fields: [penyetuju_id], references: [id], onDelete: SetNull)
+
+  @@index([status])
+  @@index([pemohon_id])
+  @@index([dokumen_id])
+  @@map("permintaan_aksi")
 }

@@ -152,15 +152,42 @@ function DokumenContent() {
                           {doc.nomor && (
                             <p className="text-sm text-gray-500 mt-1">Nomor: {doc.nomor}</p>
                           )}
-                          {doc.abstrak && (
+                          
+                          {/* Search Highlights Snippets */}
+                          {doc.highlight && Object.keys(doc.highlight).length > 0 ? (
+                            <div className="mt-3 text-sm text-gray-600 space-y-1 bg-yellow-50/50 p-3 rounded-lg border border-yellow-100/50">
+                               {doc.highlight.isi_teks && (
+                                 <p className="line-clamp-2" dangerouslySetInnerHTML={{ __html: `...${doc.highlight.isi_teks.join(' ... ')}...` }} />
+                               )}
+                               {doc.highlight.abstrak && !doc.highlight.isi_teks && (
+                                 <p className="line-clamp-2" dangerouslySetInnerHTML={{ __html: `...${doc.highlight.abstrak.join(' ... ')}...` }} />
+                               )}
+                            </div>
+                          ) : doc.abstrak ? (
                             <p className="text-sm text-gray-600 mt-3 line-clamp-2">
                               {doc.abstrak}
                             </p>
+                          ) : null}
+                          
+                          {/* Kata Kunci / Tags */}
+                          {doc.kata_kunci && Array.isArray(doc.kata_kunci) && doc.kata_kunci.length > 0 && (
+                            <div className="flex flex-wrap gap-2 mt-3">
+                              {doc.kata_kunci.slice(0, 3).map((tag: string, idx: number) => (
+                                <span key={idx} className="bg-gray-100 text-gray-500 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded">
+                                  {tag}
+                                </span>
+                              ))}
+                              {doc.kata_kunci.length > 3 && (
+                                <span className="text-gray-400 text-[10px] font-bold uppercase px-1 py-0.5">
+                                  +{doc.kata_kunci.length - 3} lagi
+                                </span>
+                              )}
+                            </div>
                           )}
                         </div>
                       </div>
-                      <div className="text-gray-300 group-hover:text-bpn transition transform group-hover:translate-x-1">
-                        <ChevronRight className="w-6 h-6" />
+                      <div className="text-gray-300 group-hover:text-bpn transition transform group-hover:translate-x-1 mt-2">
+                        <ChevronRight className="w-5 h-5" />
                       </div>
                     </div>
                   </div>

@@ -221,7 +221,7 @@ export default function AdminDashboard() {
             <h3 className="font-bold text-lg text-slate-800">Dokumen Hukum Terbaru</h3>
             <p className="text-xs text-slate-400 mt-0.5">5 dokumen terakhir yang diunggah</p>
           </div>
-          <Link href="/admin/dokumen" className="flex items-center gap-1 text-sm font-medium text-bpn hover:text-bpn-dark transition">
+          <Link href="/dashboard/dokumen" className="flex items-center gap-1 text-sm font-medium text-bpn hover:text-bpn-dark transition">
             Lihat Semua <ArrowUpRight className="w-3.5 h-3.5" />
           </Link>
         </div>

@@ -1,5 +1,5 @@
 import {
-  Controller, Get, Post, Delete, Param, Query, Body,
+  Controller, Get, Post, Patch, Delete, Param, Query, Body,
   UseGuards, UseInterceptors, UploadedFile, ParseFilePipe,
   FileTypeValidator, MaxFileSizeValidator, HttpCode, HttpStatus,
 } from '@nestjs/common';
@@ -11,6 +11,7 @@ import { Public } from '../../common/decorators/public.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { DokumenService } from './dokumen.service';
 import { BuatDokumenDto } from './dto/buat-dokumen.dto';
+import { EditDokumenDto } from './dto/edit-dokumen.dto';
 import { FilterDokumenDto } from './dto/filter-dokumen.dto';
 import { PeranPengguna } from '@prisma/client';
 
@@ -53,12 +54,23 @@ export class DokumenController {
     return this.dokumenService.uploadDanBuat(file, dto, email);
   }
 
-  /** DELETE /dokumen/:id — Hapus dokumen (soft delete, admin only) */
+  /** PATCH /dokumen/:id — Edit metadata dokumen (admin/pengelola) */
+  @Patch(':id')
+  @Roles(PeranPengguna.superadmin, PeranPengguna.admin, PeranPengguna.pengelola)
+  async editDokumen(
+    @Param('id') id: string,
+    @Body() dto: EditDokumenDto,
+    @CurrentUser('sub') userId: string,
+  ) {
+    return this.dokumenService.editDokumen(id, dto, userId);
+  }
+
+  /** DELETE /dokumen/:id — Hapus dokumen (admin / superadmin) */
   @Delete(':id')
-  @Roles(PeranPengguna.admin)
+  @Roles(PeranPengguna.superadmin, PeranPengguna.admin)
   @HttpCode(HttpStatus.NO_CONTENT)
-  async hapusDokumen(@Param('id') id: string) {
-    return this.dokumenService.hapusSoft(id);
+  async hapusDokumen(@Param('id') id: string, @CurrentUser() user: any) {
+    return this.dokumenService.hapusSoft(id, user);
   }
 
   /** POST /dokumen/:id/reindex — Re-index ke Elasticsearch */
@@ -69,3 +81,4 @@ export class DokumenController {
     return { pesan: 'Dokumen dijadwalkan untuk re-index' };
   }
 }
+

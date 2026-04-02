@@ -55,14 +55,28 @@ export class AnalyticsService {
   }
 
   async getAktivitasHarian() {
-    // Mengembalikan data hari ini - hari ke 7
-    return [
-      { name: 'Senin', lihat: 120, unduh: 40 },
-      { name: 'Selasa', lihat: 98, unduh: 30 },
-      { name: 'Rabu', lihat: 150, unduh: 45 },
-      { name: 'Kamis', lihat: 180, unduh: 60 },
-      { name: 'Jumat', lihat: 110, unduh: 35 },
-    ]; // Dummy for now since writing complex group by daily logic can take more time and not primary request
+    const data = [];
+    for (let i = 6; i >= 0; i--) {
+      const targetDate = new Date();
+      targetDate.setDate(targetDate.getDate() - i);
+      targetDate.setHours(0, 0, 0, 0);
+      
+      const nextDate = new Date(targetDate);
+      nextDate.setDate(targetDate.getDate() + 1);
+
+      const lihat = await this.prisma.logAktivitas.count({
+        where: { tipe_aksi: 'lihat', dibuat_pada: { gte: targetDate, lt: nextDate } }
+      });
+      const unduh = await this.prisma.logAktivitas.count({
+        where: { tipe_aksi: 'unduh', dibuat_pada: { gte: targetDate, lt: nextDate } }
+      });
+
+      // Format nama hari misal "Senin"
+      const dateFormatter = new Intl.DateTimeFormat('id-ID', { weekday: 'long' });
+      const dayName = dateFormatter.format(targetDate);
+      data.push({ name: dayName, lihat, unduh });
+    }
+    return data;
   }
 
   async getDokumenTerbaru() {
@@ -79,5 +93,30 @@ export class AnalyticsService {
         ukuran_file: true
       }
     });
+  }
+
+  async getStatistikPublik() {
+    const total_dokumen = await this.prisma.dokumen.count({
+      where: { dihapus_pada: null, status: 'aktif' }
+    });
+
+    const jenisStats = await this.prisma.dokumen.groupBy({
+      by: ['jenis'],
+      where: { dihapus_pada: null, status: 'aktif' },
+      _count: { _all: true }
+    });
+
+    const tahunStats = await this.prisma.dokumen.groupBy({
+      by: ['tahun'],
+      where: { dihapus_pada: null, status: 'aktif' },
+      _count: { _all: true },
+      orderBy: { tahun: 'asc' }
+    });
+
+    return {
+      total_dokumen,
+      berdasarkan_jenis: jenisStats.map(s => ({ name: s.jenis, count: s._count._all })),
+      berdasarkan_tahun: tahunStats.map(s => ({ name: s.tahun, count: s._count._all }))
+    };
   }
 }

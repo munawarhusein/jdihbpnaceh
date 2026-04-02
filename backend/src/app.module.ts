@@ -21,10 +21,12 @@ import { AuthModule } from './modules/auth/auth.module';
 import { DokumenModule } from './modules/dokumen/dokumen.module';
 import { PencarianModule } from './modules/pencarian/pencarian.module';
 import { AnalyticsModule } from './modules/analytics/analytics.module';
+import { ApprovalModule } from './modules/approval/approval.module';
 
 // Integration Modules
 import { StorageModule } from './integrations/storage/storage.module';
 import { ElasticsearchIntegrationModule } from './integrations/elasticsearch/elasticsearch.module';
+import { AiModule } from './integrations/ai/ai.module';
 
 // Queue
 import { QueueModule } from './queue/queue.module';
@@ -77,10 +79,12 @@ import { PenggunaModule } from './modules/pengguna/pengguna.module';
     DokumenModule,
     PencarianModule,
     AnalyticsModule,
+    ApprovalModule,
 
     // Integrations
     StorageModule,
     ElasticsearchIntegrationModule,
+    AiModule,
 
     // Queue Workers
     QueueModule,

@@ -42,6 +42,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     { label: 'Kelola Dokumen', icon: FolderOpen, href: '/dashboard/dokumen' },
     { label: 'Kategori Hukum', icon: Tags, href: '/dashboard/kategori' },
     { label: 'Pengguna', icon: Users, href: '/dashboard/pengguna' },
+    { label: 'Persetujuan Aksi', icon: Bell, href: '/dashboard/approval' },
+    { label: 'Profil Saya', icon: Users, href: '/dashboard/profil' },
   ];
 
   return (
